@@ -1,5 +1,5 @@
-import { prisma } from "../config/db.ts";
-import { redis } from "../config/redis.ts";
+import { prisma } from "../config/db";
+import { redis } from "../config/redis";
 import { Request, Response } from "express";
 
 const KEY_TTL_SECONDS = 60 * 60 * 24; // keep keys for 24 hours

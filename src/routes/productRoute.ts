@@ -1,7 +1,7 @@
-import { buyProduct, getProduct } from "../controllers/productController.ts";
+import { buyProduct, getProduct } from "../controllers/productController";
 
 import express from 'express';
-import { buyLimiter } from "../middleware/buyLimit.ts";
+import { buyLimiter } from "../middleware/buyLimit";
 const router = express.Router()
 
 
