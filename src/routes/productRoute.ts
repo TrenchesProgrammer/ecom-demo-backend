@@ -1,4 +1,4 @@
-import { buyProduct, getProduct } from "../controllers/productController";
+import { buyProduct, getProduct } from "../controllers/productController.ts";
 
 import express from 'express';
 import { buyLimiter } from "../middleware/buyLimit";
