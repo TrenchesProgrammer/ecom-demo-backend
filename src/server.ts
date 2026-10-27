@@ -8,7 +8,7 @@ const server = app.listen(PORT, ()=>{
     console.log("Server is running on PORT: ", PORT)
 });
 app.use(cors({
-    origin: 'http://localhost:4000', // Allow Next.js frontend
+    origin: 'https://ecom-demo-frontend.vercel.app/', 
     credentials: true
 }));
 app.use(express.json());
