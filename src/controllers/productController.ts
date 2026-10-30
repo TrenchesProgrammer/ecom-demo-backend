@@ -13,6 +13,28 @@ export const getProduct = async (req: Request, res: Response) => {
     }
 };
 
+export const getProductById = async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    if (typeof id !== "string") {
+        return res.status(400).json({ error: "Invalid product id" });
+    }
+
+    try {
+        const product = await prisma.product.findUnique({
+            where: { productId: id },
+        });
+
+        if (!product) {
+            return res.status(404).json({ error: "Product not found" });
+        }
+
+        return res.json(product);
+    } catch (error) {
+        return res.status(500).json({ error: "Failed to fetch product" });
+    }
+};
+
 export const buyProduct = async (req: Request, res: Response) => {
     const idempotencyKey = req.headers["idempotency-key"];
     const guestId = req.get("guest-id")?.trim();
