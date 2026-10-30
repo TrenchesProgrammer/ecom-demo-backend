@@ -38,6 +38,7 @@ export const getProductById = async (req: Request, res: Response) => {
 export const buyProduct = async (req: Request, res: Response) => {
     const idempotencyKey = req.headers["idempotency-key"];
     const guestId = req.get("guest-id")?.trim();
+    const { productId } = req.body; 
 
     if (typeof idempotencyKey !== "string") {
         return res.status(400).json({ success: false, message: "Missing Idempotency-Key header" });
@@ -45,6 +46,10 @@ export const buyProduct = async (req: Request, res: Response) => {
 
     if (!guestId) {
         return res.status(400).json({ success: false, message: "Missing required guest-id header." });
+    }
+
+    if (!productId || typeof productId !== "string") {
+        return res.status(400).json({ success: false, message: "Missing or invalid productId in request body." });
     }
 
     const redisKey = `idempotency:${idempotencyKey}`;
@@ -66,7 +71,6 @@ export const buyProduct = async (req: Request, res: Response) => {
             const products: any = await tx.$queryRaw`SELECT * FROM "Product" LIMIT 1 FOR UPDATE`;
             const product = products[0];
 
-            // FIX: Return a response object instead of throwing an error to prevent Prisma retry loops
             if (!product || product.stock <= 0) {
                 return { success: false, message: "Out of stock!" };
             }
@@ -77,7 +81,6 @@ export const buyProduct = async (req: Request, res: Response) => {
             });
              await tx.transactions.create({
                 data: {
-                
                     user: guestId,
                     productId: product.productId,
                 },
@@ -85,11 +88,10 @@ export const buyProduct = async (req: Request, res: Response) => {
 
             return { success: true, message: "Purchase successful!" };
         }, {
-            maxWait: 5000,  // Increased to allow more buffer time to acquire a connection
-            timeout: 10000, // Increased to allow long-running processes to finish safely
+            maxWait: 5000,
+            timeout: 10000,
         });
         
-        // Save the final result so retries get the same response (even out of stock results)
         await redis.set(redisKey, JSON.stringify({ status: "done", body: result }), "EX", KEY_TTL_SECONDS);
         
         if (!result.success) {
@@ -98,7 +100,6 @@ export const buyProduct = async (req: Request, res: Response) => {
         
         return res.json(result);
     } catch (error: any) {
-        // Release the key so the client can retry with the same one if an actual DB crash occurred
         await redis.del(redisKey);
         return res.status(500).json({ success: false, message: "Internal server or transaction timeout error" });
     }
@@ -116,9 +117,9 @@ export const getTransactionHistory = async (req: Request, res: Response) => {
     
     try {
         const transactions = await prisma.transactions.findMany({
-            where: { user: guestId }
+            where: { user: guestId },
+            orderBy: { createdAt: "desc" } 
         });
-        
         return res.status(200).json({
             message: "success!",
             data: {
