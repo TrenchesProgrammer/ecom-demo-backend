@@ -23,5 +23,6 @@ model Transactions{
  id String @id @default(uuid())
  user String
  productId String 
+ createdAt DateTime @default(now())
  product Product @relation(fields: [productId], references: [productId])
 }
