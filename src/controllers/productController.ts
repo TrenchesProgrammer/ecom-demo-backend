@@ -6,10 +6,10 @@ const KEY_TTL_SECONDS = 60 * 60 * 24; // keep keys for 24 hours
 
 export const getProduct = async (req: Request, res: Response) => {
     try {
-        const product = await prisma.product.findMany();
-        res.json(product);
+        const products = await prisma.product.findMany();
+        return res.json(products);
     } catch (error) {
-        res.status(500).json({ error: "Failed to fetch product" });
+        return res.status(500).json({ error: "Failed to fetch products" });
     }
 };
 
@@ -38,7 +38,9 @@ export const getProductById = async (req: Request, res: Response) => {
 export const buyProduct = async (req: Request, res: Response) => {
     const idempotencyKey = req.headers["idempotency-key"];
     const guestId = req.get("guest-id")?.trim();
-    const { productId } = req.body; 
+    const { productId, quantity } = req.body; 
+
+    const qty = Number(quantity);
 
     if (typeof idempotencyKey !== "string") {
         return res.status(400).json({ success: false, message: "Missing Idempotency-Key header" });
@@ -50,6 +52,11 @@ export const buyProduct = async (req: Request, res: Response) => {
 
     if (!productId || typeof productId !== "string") {
         return res.status(400).json({ success: false, message: "Missing or invalid productId in request body." });
+    }
+
+    // Fix 1: Validate quantity format & value
+    if (isNaN(qty) || qty <= 0 || !Number.isInteger(qty)) {
+        return res.status(400).json({ success: false, message: "Quantity must be a positive integer." });
     }
 
     const redisKey = `idempotency:${idempotencyKey}`;
@@ -68,21 +75,33 @@ export const buyProduct = async (req: Request, res: Response) => {
 
     try {
         const result = await prisma.$transaction(async (tx) => {
-            const products: any = await tx.$queryRaw`SELECT * FROM "Product" LIMIT 1 FOR UPDATE`;
+            const products: any = await tx.$queryRaw`
+                SELECT "productId", "stock" 
+                FROM "Product" 
+                WHERE "productId" = ${productId} 
+                FOR UPDATE
+            `;
             const product = products[0];
 
-            if (!product || product.stock <= 0) {
-                return { success: false, message: "Out of stock!" };
+            if (!product) {
+                return { success: false, message: "Product not found!" };
+            }
+
+            // Fix 2: Check if stock is lower than requested quantity
+            if (product.stock < qty) {
+                return { success: false, message: "Insufficient stock available!" };
             }
 
             await tx.product.update({
                 where: { productId: product.productId },
-                data: { stock: product.stock - 1 },
+                data: { stock: product.stock - qty },
             });
-             await tx.transactions.create({
+
+            await tx.transactions.create({
                 data: {
                     user: guestId,
                     productId: product.productId,
+                    quantity: qty
                 },
             });
 
@@ -91,13 +110,15 @@ export const buyProduct = async (req: Request, res: Response) => {
             maxWait: 5000,
             timeout: 10000,
         });
-        
-        await redis.set(redisKey, JSON.stringify({ status: "done", body: result }), "EX", KEY_TTL_SECONDS);
-        
+
+        // Fix 3: Handle failed purchase result without locking idempotency key forever
         if (!result.success) {
+            await redis.del(redisKey);
             return res.status(400).json(result);
         }
-        
+
+        await redis.set(redisKey, JSON.stringify({ status: "done", body: result }), "EX", KEY_TTL_SECONDS);
+
         return res.json(result);
     } catch (error: any) {
         await redis.del(redisKey);
